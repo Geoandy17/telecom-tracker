@@ -2,10 +2,11 @@
 
 import { useState, useMemo, useCallback } from 'react';
 import dynamic from 'next/dynamic';
+import Image from 'next/image';
 import FileUpload from '@/components/FileUpload';
 import PhoneList from '@/components/PhoneList';
 import Timeline from '@/components/Timeline';
-import { Upload, Map as MapIcon, Phone, Activity, Shield, ChevronLeft } from 'lucide-react';
+import { Upload, Map as MapIcon, Phone, Activity, ChevronLeft } from 'lucide-react';
 
 // Import dynamique de la carte pour éviter les erreurs SSR
 const MapComponent = dynamic(() => import('@/components/Map'), {
@@ -139,7 +140,13 @@ export default function Home() {
           <div className="max-w-7xl mx-auto px-6 py-4">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-blue-500/20 rounded-xl">
-                <Shield className="w-8 h-8 text-blue-400" />
+                <Image
+                  src="/antic-logo.jpeg"
+                  alt="ANTIC Logo"
+                  width={32}
+                  height={32}
+                  className="w-8 h-8 rounded-lg object-contain"
+                />
               </div>
               <div>
                 <h1 className="text-2xl font-bold text-white">TelecomTracker</h1>
@@ -236,7 +243,13 @@ export default function Home() {
 
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-blue-100 rounded-xl">
-                  <Shield className="w-6 h-6 text-blue-600" />
+                  <Image
+                    src="/antic-logo.jpeg"
+                    alt="ANTIC Logo"
+                    width={24}
+                    height={24}
+                    className="w-6 h-6 rounded-lg object-contain"
+                  />
                 </div>
                 <div>
                   <h1 className="text-xl font-bold text-gray-900">TelecomTracker</h1>

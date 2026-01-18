@@ -15,6 +15,10 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "TelecomTracker - Analyse des Données Télécom",
   description: "Application d'analyse et de visualisation des données de localisation téléphonique",
+  icons: {
+    icon: '/antic-logo.jpeg',
+    apple: '/antic-logo.jpeg',
+  },
 };
 
 export default function RootLayout({
