@@ -92,12 +92,22 @@ interface MapComponentProps {
 }
 
 // Composant pour ajuster la vue de la carte et gérer la navigation
-function MapController({ positions, targetPosition, onNavigationComplete }: {
+function MapController({ positions, targetPosition, onNavigationComplete, isFullscreen }: {
   positions: Position[];
   targetPosition?: { lat: number; lng: number } | null;
   onNavigationComplete?: () => void;
+  isFullscreen?: boolean;
 }) {
   const map = useMap();
+
+  // Rafraîchir la carte quand le mode plein écran change
+  useEffect(() => {
+    // Petit délai pour laisser le DOM se mettre à jour
+    const timer = setTimeout(() => {
+      map.invalidateSize();
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [isFullscreen, map]);
 
   useEffect(() => {
     if (positions.length > 0 && !targetPosition) {
@@ -538,6 +548,7 @@ export default function MapComponent({
           positions={positions}
           targetPosition={targetPosition}
           onNavigationComplete={handleNavigationComplete}
+          isFullscreen={isFullscreen}
         />
 
         {/* Tracé du trajet avec segments colorés - gradient vert -> jaune -> rouge */}
