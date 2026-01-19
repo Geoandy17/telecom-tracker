@@ -168,6 +168,8 @@ export default function MapComponent({
   const [showDateFilter, setShowDateFilter] = useState(false);
   const [localStartDate, setLocalStartDate] = useState<Date | null>(null);
   const [localEndDate, setLocalEndDate] = useState<Date | null>(null);
+  const [startTime, setStartTime] = useState<string>('00:00');
+  const [endTime, setEndTime] = useState<string>('23:59');
 
   // Calculer les dates min et max disponibles
   const availableDates = useMemo(() => {
@@ -211,27 +213,59 @@ export default function MapComponent({
     setTargetPosition(null);
   }, []);
 
+  // Vérifier si la plage de dates est valide
+  const isDateRangeValid = useMemo(() => {
+    if (!localStartDate || !localEndDate) return true; // Valide si une des dates est vide
+
+    // Créer les dates avec les heures
+    const [startH, startM] = startTime.split(':').map(Number);
+    const [endH, endM] = endTime.split(':').map(Number);
+
+    const startDateTime = new Date(localStartDate);
+    startDateTime.setHours(startH, startM, 0, 0);
+
+    const endDateTime = new Date(localEndDate);
+    endDateTime.setHours(endH, endM, 59, 999);
+
+    return endDateTime >= startDateTime;
+  }, [localStartDate, localEndDate, startTime, endTime]);
+
   // Appliquer le filtre de dates
   const applyDateFilter = useCallback(() => {
+    if (!isDateRangeValid) return;
+
     if (onDateRangeChange) {
-      let endDate = localEndDate;
-      if (endDate) {
-        // Mettre l'heure de fin à 23:59:59
-        endDate = new Date(endDate);
-        endDate.setHours(23, 59, 59, 999);
+      let startDateTime = localStartDate;
+      let endDateTime = localEndDate;
+
+      // Combiner date et heure de début
+      if (startDateTime && startTime) {
+        const [hours, minutes] = startTime.split(':').map(Number);
+        startDateTime = new Date(startDateTime);
+        startDateTime.setHours(hours, minutes, 0, 0);
       }
+
+      // Combiner date et heure de fin
+      if (endDateTime && endTime) {
+        const [hours, minutes] = endTime.split(':').map(Number);
+        endDateTime = new Date(endDateTime);
+        endDateTime.setHours(hours, minutes, 59, 999);
+      }
+
       onDateRangeChange({
-        start: localStartDate,
-        end: endDate,
+        start: startDateTime,
+        end: endDateTime,
       });
     }
     setShowDateFilter(false);
-  }, [localStartDate, localEndDate, onDateRangeChange]);
+  }, [localStartDate, localEndDate, startTime, endTime, onDateRangeChange, isDateRangeValid]);
 
   // Réinitialiser le filtre
   const resetDateFilter = useCallback(() => {
     setLocalStartDate(null);
     setLocalEndDate(null);
+    setStartTime('00:00');
+    setEndTime('23:59');
     if (onDateRangeChange) {
       onDateRangeChange({ start: null, end: null });
     }
@@ -364,7 +398,7 @@ export default function MapComponent({
     <div className={`${isFullscreen ? 'fixed inset-0 z-[9999] bg-white' : 'h-full relative rounded-2xl shadow-lg'} overflow-hidden`}>
       {/* Panneau de filtre par date avec react-datepicker */}
       {showDateFilter && (
-        <div className="absolute top-4 left-4 z-[1001] bg-white/95 backdrop-blur-sm rounded-lg p-3 shadow-lg w-[240px]">
+        <div className="absolute top-4 left-4 z-[1001] bg-white/95 backdrop-blur-sm rounded-lg p-3 shadow-lg w-[280px]">
           <div className="flex items-center justify-between mb-2">
             <div className="text-xs font-bold text-gray-800">Filtrer par période</div>
             <button
@@ -379,57 +413,81 @@ export default function MapComponent({
               Données: {availableDates.minFull} au {availableDates.maxFull}
             </div>
           )}
-          <div className="space-y-2">
+          <div className="space-y-3">
             <div>
-              <label className="block text-[10px] font-medium text-gray-600 mb-0.5">Date de début</label>
-              <DatePicker
-                selected={localStartDate}
-                onChange={(date: Date | null) => setLocalStartDate(date)}
-                selectsStart
-                startDate={localStartDate}
-                endDate={localEndDate}
-                minDate={availableDates?.min}
-                maxDate={availableDates?.max}
-                locale="fr"
-                dateFormat="dd/MM/yy"
-                placeholderText="Début"
-                className="w-full px-1.5 py-1 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white"
-                calendarClassName="shadow-lg border-0 rounded-lg"
-                isClearable
-                showMonthDropdown
-                showYearDropdown
-                dropdownMode="select"
-                yearDropdownItemNumber={15}
-                popperPlacement="bottom-start"
-              />
+              <label className="block text-[10px] font-medium text-gray-600 mb-1">Début</label>
+              <div className="flex gap-2">
+                <DatePicker
+                  selected={localStartDate}
+                  onChange={(date: Date | null) => setLocalStartDate(date)}
+                  selectsStart
+                  startDate={localStartDate}
+                  endDate={localEndDate}
+                  minDate={availableDates?.min}
+                  maxDate={availableDates?.max}
+                  locale="fr"
+                  dateFormat="dd/MM/yyyy"
+                  placeholderText="Date"
+                  className="flex-1 px-2 py-1.5 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white"
+                  calendarClassName="shadow-lg border-0 rounded-lg"
+                  isClearable
+                  showMonthDropdown
+                  showYearDropdown
+                  dropdownMode="select"
+                  yearDropdownItemNumber={15}
+                  popperPlacement="bottom-start"
+                />
+                <input
+                  type="time"
+                  value={startTime}
+                  onChange={(e) => setStartTime(e.target.value)}
+                  onClick={(e) => (e.target as HTMLInputElement).showPicker()}
+                  className="w-[85px]"
+                />
+              </div>
             </div>
             <div>
-              <label className="block text-[10px] font-medium text-gray-600 mb-0.5">Date de fin</label>
-              <DatePicker
-                selected={localEndDate}
-                onChange={(date: Date | null) => setLocalEndDate(date)}
-                selectsEnd
-                startDate={localStartDate}
-                endDate={localEndDate}
-                minDate={localStartDate || availableDates?.min}
-                maxDate={availableDates?.max}
-                locale="fr"
-                dateFormat="dd/MM/yy"
-                placeholderText="Fin"
-                className="w-full px-1.5 py-1 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white"
-                calendarClassName="shadow-lg border-0 rounded-lg"
-                isClearable
-                showMonthDropdown
-                showYearDropdown
-                dropdownMode="select"
-                yearDropdownItemNumber={15}
-                popperPlacement="bottom-start"
-              />
+              <label className="block text-[10px] font-medium text-gray-600 mb-1">Fin</label>
+              <div className="flex gap-2">
+                <DatePicker
+                  selected={localEndDate}
+                  onChange={(date: Date | null) => setLocalEndDate(date)}
+                  selectsEnd
+                  startDate={localStartDate}
+                  endDate={localEndDate}
+                  minDate={localStartDate || availableDates?.min}
+                  maxDate={availableDates?.max}
+                  locale="fr"
+                  dateFormat="dd/MM/yyyy"
+                  placeholderText="Date"
+                  className="flex-1 px-2 py-1.5 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white"
+                  calendarClassName="shadow-lg border-0 rounded-lg"
+                  isClearable
+                  showMonthDropdown
+                  showYearDropdown
+                  dropdownMode="select"
+                  yearDropdownItemNumber={15}
+                  popperPlacement="bottom-start"
+                />
+                <input
+                  type="time"
+                  value={endTime}
+                  onChange={(e) => setEndTime(e.target.value)}
+                  onClick={(e) => (e.target as HTMLInputElement).showPicker()}
+                  className="w-[85px]"
+                />
+              </div>
             </div>
+            {/* Message d'erreur si plage invalide */}
+            {!isDateRangeValid && (
+              <div className="text-[10px] text-red-500 bg-red-50 rounded p-1.5">
+                La date/heure de fin doit être après la date/heure de début
+              </div>
+            )}
             <div className="flex gap-2 pt-1">
               <button
                 onClick={applyDateFilter}
-                disabled={!localStartDate && !localEndDate}
+                disabled={(!localStartDate && !localEndDate) || !isDateRangeValid}
                 className="flex-1 px-2 py-1.5 text-[11px] font-medium text-white bg-blue-600 rounded hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Appliquer
