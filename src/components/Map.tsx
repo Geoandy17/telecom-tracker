@@ -1,11 +1,17 @@
 'use client';
 
-import { useEffect, useMemo, useRef } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, ZoomControl } from 'react-leaflet';
 import L from 'leaflet';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
+import { Maximize2, Minimize2, Navigation, Calendar, X } from 'lucide-react';
+import DatePicker, { registerLocale } from 'react-datepicker';
+import 'react-datepicker/dist/react-datepicker.css';
 import 'leaflet/dist/leaflet.css';
+
+// Enregistrer la locale française pour le date picker
+registerLocale('fr', fr);
 
 // Fix pour les icônes Leaflet avec Next.js
 const createIcon = (color: string, isStart?: boolean, isEnd?: boolean) => {
@@ -78,18 +84,39 @@ interface MapComponentProps {
   positions: Position[];
   phoneNumber: string;
   identity?: string;
+  dateRange?: { start: Date | null; end: Date | null };
+  onDateRangeChange?: (range: { start: Date | null; end: Date | null }) => void;
+  isFullscreen?: boolean;
+  onToggleFullscreen?: () => void;
+  availableDateRange?: { min: string; max: string; minFull: string; maxFull: string };
 }
 
-// Composant pour ajuster la vue de la carte
-function MapController({ positions }: { positions: Position[] }) {
+// Composant pour ajuster la vue de la carte et gérer la navigation
+function MapController({ positions, targetPosition, onNavigationComplete }: {
+  positions: Position[];
+  targetPosition?: { lat: number; lng: number } | null;
+  onNavigationComplete?: () => void;
+}) {
   const map = useMap();
 
   useEffect(() => {
-    if (positions.length > 0) {
+    if (positions.length > 0 && !targetPosition) {
       const bounds = L.latLngBounds(positions.map(p => [p.lat, p.lng]));
       map.fitBounds(bounds, { padding: [50, 50], maxZoom: 15 });
     }
-  }, [positions, map]);
+  }, [positions, map, targetPosition]);
+
+  // Naviguer vers un point spécifique
+  useEffect(() => {
+    if (targetPosition) {
+      map.flyTo([targetPosition.lat, targetPosition.lng], 16, {
+        duration: 1.5,
+      });
+      if (onNavigationComplete) {
+        setTimeout(onNavigationComplete, 1600);
+      }
+    }
+  }, [targetPosition, map, onNavigationComplete]);
 
   return null;
 }
@@ -116,8 +143,104 @@ function getGradientColor(ratio: number): string {
   return `rgb(${r}, ${g}, ${b})`;
 }
 
-export default function MapComponent({ positions, phoneNumber, identity }: MapComponentProps) {
+export default function MapComponent({
+  positions,
+  phoneNumber,
+  identity,
+  dateRange,
+  onDateRangeChange,
+  isFullscreen = false,
+  onToggleFullscreen,
+  availableDateRange,
+}: MapComponentProps) {
   const mapRef = useRef<L.Map | null>(null);
+  const [targetPosition, setTargetPosition] = useState<{ lat: number; lng: number } | null>(null);
+  const [showDateFilter, setShowDateFilter] = useState(false);
+  const [localStartDate, setLocalStartDate] = useState<Date | null>(null);
+  const [localEndDate, setLocalEndDate] = useState<Date | null>(null);
+
+  // Calculer les dates min et max disponibles
+  const availableDates = useMemo(() => {
+    if (availableDateRange) {
+      return {
+        min: new Date(availableDateRange.min),
+        max: new Date(availableDateRange.max),
+        minFull: availableDateRange.minFull,
+        maxFull: availableDateRange.maxFull,
+      };
+    }
+    if (positions.length === 0) return null;
+    const dates = positions.map(p => new Date(p.timestamp).getTime());
+    const minDate = new Date(Math.min(...dates));
+    const maxDate = new Date(Math.max(...dates));
+    return {
+      min: minDate,
+      max: maxDate,
+      minFull: format(minDate, "dd MMM yyyy", { locale: fr }),
+      maxFull: format(maxDate, "dd MMM yyyy", { locale: fr }),
+    };
+  }, [positions, availableDateRange]);
+
+  // Naviguer vers le point de départ
+  const navigateToStart = useCallback(() => {
+    if (positions.length > 0) {
+      setTargetPosition({ lat: positions[0].lat, lng: positions[0].lng });
+    }
+  }, [positions]);
+
+  // Naviguer vers le point d'arrivée
+  const navigateToEnd = useCallback(() => {
+    if (positions.length > 0) {
+      const lastPos = positions[positions.length - 1];
+      setTargetPosition({ lat: lastPos.lat, lng: lastPos.lng });
+    }
+  }, [positions]);
+
+  // Réinitialiser la navigation
+  const handleNavigationComplete = useCallback(() => {
+    setTargetPosition(null);
+  }, []);
+
+  // Appliquer le filtre de dates
+  const applyDateFilter = useCallback(() => {
+    if (onDateRangeChange) {
+      let endDate = localEndDate;
+      if (endDate) {
+        // Mettre l'heure de fin à 23:59:59
+        endDate = new Date(endDate);
+        endDate.setHours(23, 59, 59, 999);
+      }
+      onDateRangeChange({
+        start: localStartDate,
+        end: endDate,
+      });
+    }
+    setShowDateFilter(false);
+  }, [localStartDate, localEndDate, onDateRangeChange]);
+
+  // Réinitialiser le filtre
+  const resetDateFilter = useCallback(() => {
+    setLocalStartDate(null);
+    setLocalEndDate(null);
+    if (onDateRangeChange) {
+      onDateRangeChange({ start: null, end: null });
+    }
+    setShowDateFilter(false);
+  }, [onDateRangeChange]);
+
+  // Gérer la touche Échap pour quitter le mode plein écran
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isFullscreen && onToggleFullscreen) {
+        onToggleFullscreen();
+      }
+    };
+
+    if (isFullscreen) {
+      document.addEventListener('keydown', handleKeyDown);
+      return () => document.removeEventListener('keydown', handleKeyDown);
+    }
+  }, [isFullscreen, onToggleFullscreen]);
 
   // Calculer les couleurs pour chaque segment du trajet avec gradient fluide
   const segmentData = useMemo(() => {
@@ -190,47 +313,193 @@ export default function MapComponent({ positions, phoneNumber, identity }: MapCo
   const defaultZoom = 6;
 
   if (positions.length === 0) {
+    const hasDateFilter = dateRange?.start || dateRange?.end;
     return (
-      <div className="h-full flex items-center justify-center bg-gray-100 rounded-2xl">
+      <div className={`${isFullscreen ? 'fixed inset-0 z-[9999]' : 'h-full'} flex items-center justify-center bg-gray-100 rounded-2xl`}>
+        {/* Bouton plein écran même sans positions */}
+        {onToggleFullscreen && isFullscreen && (
+          <button
+            onClick={onToggleFullscreen}
+            className="absolute top-4 left-4 z-[1000] bg-white/95 backdrop-blur-sm rounded-xl p-3 shadow-lg hover:bg-gray-100 transition-colors"
+            title="Réduire"
+          >
+            <Minimize2 className="w-5 h-5 text-gray-700" />
+          </button>
+        )}
         <div className="text-center text-gray-500">
-          <p className="text-lg font-medium">Aucune position disponible</p>
-          <p className="text-sm mt-1">Sélectionnez un numéro avec des localisations</p>
+          {hasDateFilter ? (
+            <>
+              <Calendar className="w-12 h-12 mx-auto mb-3 text-gray-400" />
+              <p className="text-lg font-medium">Aucune position pour cette période</p>
+              <p className="text-sm mt-1">Modifiez les dates ou réinitialisez le filtre</p>
+              <button
+                onClick={resetDateFilter}
+                className="mt-4 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Réinitialiser le filtre
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="text-lg font-medium">Aucune position disponible</p>
+              <p className="text-sm mt-1">Sélectionnez un numéro avec des localisations</p>
+            </>
+          )}
         </div>
       </div>
     );
   }
 
   return (
-    <div className="h-full relative rounded-2xl overflow-hidden shadow-lg">
-      {/* Légende */}
-      <div className="absolute top-4 right-4 z-[1000] bg-white/95 backdrop-blur-sm rounded-xl p-4 shadow-lg min-w-[180px]">
-        <div className="text-sm font-bold text-gray-800 mb-1">
-          {phoneNumber}
+    <div className={`${isFullscreen ? 'fixed inset-0 z-[9999] bg-white' : 'h-full relative rounded-2xl shadow-lg'} overflow-hidden`}>
+      {/* Panneau de filtre par date avec react-datepicker */}
+      {showDateFilter && (
+        <div className="absolute top-4 left-4 z-[1001] bg-white/95 backdrop-blur-sm rounded-lg p-3 shadow-lg w-[240px]">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-xs font-bold text-gray-800">Filtrer par période</div>
+            <button
+              onClick={() => setShowDateFilter(false)}
+              className="p-0.5 hover:bg-gray-100 rounded transition-colors"
+            >
+              <X className="w-3.5 h-3.5 text-gray-500" />
+            </button>
+          </div>
+          {availableDates && (
+            <div className="text-[10px] text-gray-500 mb-2 bg-gray-50 rounded p-1.5">
+              Données: {availableDates.minFull} au {availableDates.maxFull}
+            </div>
+          )}
+          <div className="space-y-2">
+            <div>
+              <label className="block text-[10px] font-medium text-gray-600 mb-0.5">Date de début</label>
+              <DatePicker
+                selected={localStartDate}
+                onChange={(date: Date | null) => setLocalStartDate(date)}
+                selectsStart
+                startDate={localStartDate}
+                endDate={localEndDate}
+                minDate={availableDates?.min}
+                maxDate={availableDates?.max}
+                locale="fr"
+                dateFormat="dd/MM/yy"
+                placeholderText="Début"
+                className="w-full px-1.5 py-1 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white"
+                calendarClassName="shadow-lg border-0 rounded-lg"
+                isClearable
+                showMonthDropdown
+                showYearDropdown
+                dropdownMode="select"
+                yearDropdownItemNumber={15}
+                popperPlacement="bottom-start"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-medium text-gray-600 mb-0.5">Date de fin</label>
+              <DatePicker
+                selected={localEndDate}
+                onChange={(date: Date | null) => setLocalEndDate(date)}
+                selectsEnd
+                startDate={localStartDate}
+                endDate={localEndDate}
+                minDate={localStartDate || availableDates?.min}
+                maxDate={availableDates?.max}
+                locale="fr"
+                dateFormat="dd/MM/yy"
+                placeholderText="Fin"
+                className="w-full px-1.5 py-1 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white"
+                calendarClassName="shadow-lg border-0 rounded-lg"
+                isClearable
+                showMonthDropdown
+                showYearDropdown
+                dropdownMode="select"
+                yearDropdownItemNumber={15}
+                popperPlacement="bottom-start"
+              />
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={applyDateFilter}
+                disabled={!localStartDate && !localEndDate}
+                className="flex-1 px-2 py-1.5 text-[11px] font-medium text-white bg-blue-600 rounded hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Appliquer
+              </button>
+              <button
+                onClick={resetDateFilter}
+                className="px-2 py-1.5 text-[11px] font-medium text-gray-600 bg-gray-100 rounded hover:bg-gray-200 transition-colors"
+              >
+                Réinitialiser
+              </button>
+            </div>
+          </div>
         </div>
+      )}
+
+      {/* Légende avec navigation */}
+      <div className="absolute top-4 right-4 z-[1000] bg-white/95 backdrop-blur-sm rounded-xl shadow-lg p-3 min-w-[180px]">
+        <div className="text-sm font-bold text-gray-800 mb-1">{phoneNumber}</div>
         {identity && (
-          <div className="text-xs text-gray-600 mb-3">{identity}</div>
+          <div className="text-xs text-gray-600 mb-2">{identity}</div>
         )}
         <div className="text-xs text-gray-500 space-y-2">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-full bg-green-500 border-2 border-white shadow flex items-center justify-center text-white text-xs font-bold">1</div>
-            <span>Départ</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-full bg-red-500 border-2 border-white shadow flex items-center justify-center">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5 text-white">
+          <button
+            onClick={navigateToStart}
+            className="flex items-center gap-2 w-full hover:bg-gray-100 rounded-lg p-1 -m-1 transition-colors group"
+            title="Cliquez pour aller au point de départ"
+          >
+            <div className="w-5 h-5 rounded-full bg-green-500 border-2 border-white shadow flex items-center justify-center text-white text-[10px] font-bold">1</div>
+            <span className="group-hover:text-green-600">Départ</span>
+            <Navigation className="w-3 h-3 ml-auto opacity-0 group-hover:opacity-100 text-green-600 transition-opacity" />
+          </button>
+          <button
+            onClick={navigateToEnd}
+            className="flex items-center gap-2 w-full hover:bg-gray-100 rounded-lg p-1 -m-1 transition-colors group"
+            title="Cliquez pour aller au point d'arrivée"
+          >
+            <div className="w-5 h-5 rounded-full bg-red-500 border-2 border-white shadow flex items-center justify-center">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3 text-white">
                 <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>
                 <circle cx="12" cy="10" r="3"/>
               </svg>
             </div>
-            <span>Arrivée</span>
-          </div>
-          <div className="flex items-center gap-2 mt-2">
-            <div className="w-12 h-2 rounded" style={{background: 'linear-gradient(to right, #10B981, #EAB308, #EF4444)'}}></div>
+            <span className="group-hover:text-red-600">Arrivée</span>
+            <Navigation className="w-3 h-3 ml-auto opacity-0 group-hover:opacity-100 text-red-600 transition-opacity" />
+          </button>
+          <div className="flex items-center gap-2">
+            <div className="w-10 h-1.5 rounded" style={{background: 'linear-gradient(to right, #10B981, #EAB308, #EF4444)'}}></div>
             <span>Trajet</span>
           </div>
         </div>
-        <div className="text-xs text-gray-400 mt-3 pt-2 border-t border-gray-200">
-          {positions.length} position{positions.length > 1 ? 's' : ''}
+        {/* Ligne avec positions et boutons */}
+        <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-200">
+          <div className="text-xs text-gray-400">
+            {positions.length} position{positions.length > 1 ? 's' : ''}
+            {(dateRange?.start || dateRange?.end) && (
+              <span className="text-blue-600 ml-1">•</span>
+            )}
+          </div>
+          <div className="flex items-center gap-0.5">
+            {onDateRangeChange && (
+              <button
+                onClick={() => setShowDateFilter(!showDateFilter)}
+                className={`p-1.5 rounded-lg hover:bg-gray-100 transition-colors ${
+                  (dateRange?.start || dateRange?.end) ? 'text-blue-600' : 'text-gray-400'
+                }`}
+                title="Filtrer par période"
+              >
+                <Calendar className="w-3.5 h-3.5" />
+              </button>
+            )}
+            {onToggleFullscreen && (
+              <button
+                onClick={onToggleFullscreen}
+                className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors text-gray-400"
+                title={isFullscreen ? 'Réduire (Échap)' : 'Plein écran'}
+              >
+                {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -255,13 +524,21 @@ export default function MapComponent({ positions, phoneNumber, identity }: MapCo
         zoom={defaultZoom}
         className="h-full w-full"
         ref={mapRef}
+        zoomControl={false}
       >
+        {/* Contrôle de zoom repositionné en bas à droite */}
+        <ZoomControl position="bottomright" />
+
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
           url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
         />
 
-        <MapController positions={positions} />
+        <MapController
+          positions={positions}
+          targetPosition={targetPosition}
+          onNavigationComplete={handleNavigationComplete}
+        />
 
         {/* Tracé du trajet avec segments colorés - gradient vert -> jaune -> rouge */}
         {segmentData.map((segment, index) => (
@@ -280,6 +557,12 @@ export default function MapComponent({ positions, phoneNumber, identity }: MapCo
             key={`intermediate-${index}`}
             position={[pos.lat, pos.lng]}
             icon={createNumberedIcon(index + 2, pointColors[index + 1])}
+            eventHandlers={{
+              click: (e) => {
+                const map = e.target._map;
+                map.flyTo([pos.lat, pos.lng], 17, { duration: 1 });
+              }
+            }}
           >
             <Popup>
               <div className="text-sm min-w-[200px]">
@@ -302,6 +585,12 @@ export default function MapComponent({ positions, phoneNumber, identity }: MapCo
             position={[positions[0].lat, positions[0].lng]}
             icon={createIcon('#10B981', true, false)}
             zIndexOffset={1000}
+            eventHandlers={{
+              click: (e) => {
+                const map = e.target._map;
+                map.flyTo([positions[0].lat, positions[0].lng], 17, { duration: 1 });
+              }
+            }}
           >
             <Popup>
               <div className="text-sm min-w-[200px]">
@@ -324,6 +613,13 @@ export default function MapComponent({ positions, phoneNumber, identity }: MapCo
             position={[positions[positions.length - 1].lat, positions[positions.length - 1].lng]}
             icon={createIcon('#EF4444', false, true)}
             zIndexOffset={1000}
+            eventHandlers={{
+              click: (e) => {
+                const map = e.target._map;
+                const lastPos = positions[positions.length - 1];
+                map.flyTo([lastPos.lat, lastPos.lng], 17, { duration: 1 });
+              }
+            }}
           >
             <Popup>
               <div className="text-sm min-w-[200px]">

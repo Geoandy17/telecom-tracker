@@ -61,6 +61,11 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [showUpload, setShowUpload] = useState(true);
   const [activeTab, setActiveTab] = useState<'map' | 'timeline'>('map');
+  const [isMapFullscreen, setIsMapFullscreen] = useState(false);
+  const [dateRange, setDateRange] = useState<{ start: Date | null; end: Date | null }>({
+    start: null,
+    end: null,
+  });
 
   const handleUploadComplete = useCallback((results: UploadResult[]) => {
     // Fusionner toutes les données de tous les fichiers
@@ -109,17 +114,66 @@ export default function Home() {
     if (!selectedPhoneData) return [];
 
     // Créer les positions à partir des enregistrements (triés par date)
-    const positions = selectedPhoneData.records
-      .filter(r => r.location)
-      .map((r, index) => ({
-        lat: r.location!.latitude,
-        lng: r.location!.longitude,
-        timestamp: r.dateTime,
-        siteName: r.location!.siteName,
-        index,
-      }));
+    let records = selectedPhoneData.records.filter(r => r.location);
+
+    // Filtrer par période si des dates sont définies
+    if (dateRange.start || dateRange.end) {
+      records = records.filter(r => {
+        const recordDate = new Date(r.dateTime);
+        if (dateRange.start && recordDate < dateRange.start) return false;
+        if (dateRange.end && recordDate > dateRange.end) return false;
+        return true;
+      });
+    }
+
+    const positions = records.map((r, index) => ({
+      lat: r.location!.latitude,
+      lng: r.location!.longitude,
+      timestamp: r.dateTime,
+      siteName: r.location!.siteName,
+      index,
+    }));
 
     return positions;
+  }, [selectedPhoneData, dateRange]);
+
+  // Réinitialiser le filtre de dates quand on change de numéro
+  const handleSelectNumber = useCallback((number: string) => {
+    setSelectedNumber(number);
+    setDateRange({ start: null, end: null });
+  }, []);
+
+  // Toggle plein écran
+  const toggleMapFullscreen = useCallback(() => {
+    setIsMapFullscreen(prev => !prev);
+  }, []);
+
+  // Calculer les dates disponibles pour le numéro sélectionné (non filtrées)
+  const availableDateRange = useMemo(() => {
+    if (!selectedPhoneData) return undefined;
+    const records = selectedPhoneData.records.filter(r => r.location);
+    if (records.length === 0) return undefined;
+
+    const dates = records.map(r => new Date(r.dateTime).getTime());
+    const minDate = new Date(Math.min(...dates));
+    const maxDate = new Date(Math.max(...dates));
+
+    const formatDate = (date: Date, pattern: string) => {
+      const day = date.getDate().toString().padStart(2, '0');
+      const month = date.toLocaleDateString('fr-FR', { month: 'short' });
+      const year = date.getFullYear();
+      if (pattern === 'yyyy-MM-dd') {
+        return `${year}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${day}`;
+      }
+      return `${day} ${month} ${year}`;
+    };
+
+    return {
+      min: formatDate(minDate, 'yyyy-MM-dd'),
+      max: formatDate(maxDate, 'yyyy-MM-dd'),
+      minFull: formatDate(minDate, 'full'),
+      maxFull: formatDate(maxDate, 'full'),
+    };
   }, [selectedPhoneData]);
 
   const stats = useMemo(() => {
@@ -283,7 +337,7 @@ export default function Home() {
           <PhoneList
             phoneNumbers={uploadedData.filter(p => p.locations.length > 0)}
             selectedNumber={selectedNumber}
-            onSelectNumber={setSelectedNumber}
+            onSelectNumber={handleSelectNumber}
           />
         </aside>
 
@@ -359,6 +413,11 @@ export default function Home() {
                     positions={mapPositions}
                     phoneNumber={selectedPhoneData.number}
                     identity={selectedPhoneData.identity}
+                    dateRange={dateRange}
+                    onDateRangeChange={setDateRange}
+                    isFullscreen={isMapFullscreen}
+                    onToggleFullscreen={toggleMapFullscreen}
+                    availableDateRange={availableDateRange}
                   />
                 ) : (
                   <div className="h-full bg-white rounded-2xl shadow-lg overflow-hidden">
