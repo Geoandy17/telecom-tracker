@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, ZoomControl } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, ZoomControl, Tooltip } from 'react-leaflet';
 import L from 'leaflet';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -633,6 +633,13 @@ export default function MapComponent({
               }
             }}
           >
+            <Tooltip direction="top" offset={[0, -10]} className="custom-tooltip">
+              <div className="text-xs">
+                <div className="font-semibold">Position {index + 2}</div>
+                <div className="text-gray-600">{formatDate(pos.timestamp)}</div>
+                <div className="text-gray-500 truncate max-w-[200px]">{pos.siteName}</div>
+              </div>
+            </Tooltip>
             <Popup>
               <div className="text-sm min-w-[200px]">
                 <div className="font-bold text-gray-800 text-base">Position {index + 2}</div>
@@ -661,6 +668,13 @@ export default function MapComponent({
               }
             }}
           >
+            <Tooltip direction="top" offset={[0, -15]} className="custom-tooltip">
+              <div className="text-xs">
+                <div className="font-semibold text-green-600">DÉPART</div>
+                <div className="text-gray-600">{formatDate(positions[0].timestamp)}</div>
+                <div className="text-gray-500 truncate max-w-[200px]">{positions[0].siteName}</div>
+              </div>
+            </Tooltip>
             <Popup>
               <div className="text-sm min-w-[200px]">
                 <div className="font-bold text-green-600 text-lg">DÉPART - Position 1</div>
@@ -690,6 +704,13 @@ export default function MapComponent({
               }
             }}
           >
+            <Tooltip direction="top" offset={[0, -15]} className="custom-tooltip">
+              <div className="text-xs">
+                <div className="font-semibold text-red-600">ARRIVÉE</div>
+                <div className="text-gray-600">{formatDate(positions[positions.length - 1].timestamp)}</div>
+                <div className="text-gray-500 truncate max-w-[200px]">{positions[positions.length - 1].siteName}</div>
+              </div>
+            </Tooltip>
             <Popup>
               <div className="text-sm min-w-[200px]">
                 <div className="font-bold text-red-600 text-lg">ARRIVÉE - Position {positions.length}</div>

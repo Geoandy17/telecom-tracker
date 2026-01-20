@@ -1,12 +1,14 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import Image from 'next/image';
 import FileUpload from '@/components/FileUpload';
 import PhoneList from '@/components/PhoneList';
 import Timeline from '@/components/Timeline';
-import { Upload, Map as MapIcon, Phone, Activity, ChevronLeft } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
+import { Upload, Map as MapIcon, Phone, Activity, ChevronLeft, LogOut, User, Loader2 } from 'lucide-react';
 
 // Import dynamique de la carte pour éviter les erreurs SSR
 const MapComponent = dynamic(() => import('@/components/Map'), {
@@ -56,6 +58,8 @@ interface UploadResult {
 }
 
 export default function Home() {
+  const { user, isLoading: authLoading, logout } = useAuth();
+  const router = useRouter();
   const [uploadedData, setUploadedData] = useState<PhoneData[]>([]);
   const [selectedNumber, setSelectedNumber] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -67,6 +71,14 @@ export default function Home() {
     end: null,
   });
 
+  // Rediriger vers login si non authentifié
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.push('/login');
+    }
+  }, [user, authLoading, router]);
+
+  // IMPORTANT: Tous les hooks doivent être définis AVANT les returns conditionnels
   const handleUploadComplete = useCallback((results: UploadResult[]) => {
     // Fusionner toutes les données de tous les fichiers
     const allPhoneNumbers: PhoneData[] = [];
@@ -185,6 +197,23 @@ export default function Home() {
     };
   }, [uploadedData]);
 
+  // Afficher un loader pendant la vérification de l'authentification
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="w-12 h-12 text-blue-400 animate-spin mx-auto mb-4" />
+          <p className="text-gray-300">Chargement...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Ne rien afficher si non authentifié (redirection en cours)
+  if (!user) {
+    return null;
+  }
+
   // Vue upload
   if (showUpload) {
     return (
@@ -192,19 +221,35 @@ export default function Home() {
         {/* Header */}
         <header className="border-b border-white/10">
           <div className="max-w-7xl mx-auto px-6 py-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-blue-500/20 rounded-xl">
-                <Image
-                  src="/antic-logo.jpeg"
-                  alt="ANTIC Logo"
-                  width={32}
-                  height={32}
-                  className="w-8 h-8 rounded-lg object-contain"
-                />
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-blue-500/20 rounded-xl">
+                  <Image
+                    src="/antic-logo.jpeg"
+                    alt="ANTIC Logo"
+                    width={32}
+                    height={32}
+                    className="w-8 h-8 rounded-lg object-contain"
+                  />
+                </div>
+                <div>
+                  <h1 className="text-2xl font-bold text-white">TelecomTracker</h1>
+                  <p className="text-sm text-blue-300">Analyse des Données Télécom</p>
+                </div>
               </div>
-              <div>
-                <h1 className="text-2xl font-bold text-white">TelecomTracker</h1>
-                <p className="text-sm text-blue-300">Analyse des Données Télécom</p>
+              {/* User info et logout */}
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2 text-white/80">
+                  <User className="w-4 h-4" />
+                  <span className="text-sm">{user.name}</span>
+                </div>
+                <button
+                  onClick={logout}
+                  className="flex items-center gap-2 px-3 py-2 text-sm text-white/70 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                >
+                  <LogOut className="w-4 h-4" />
+                  Déconnexion
+                </button>
               </div>
             </div>
           </div>
@@ -311,7 +356,7 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Stats */}
+            {/* Stats et User */}
             <div className="flex items-center gap-6">
               <div className="text-center">
                 <div className="text-2xl font-bold text-gray-900">{stats.totalNumbers}</div>
@@ -324,6 +369,19 @@ export default function Home() {
               <div className="text-center">
                 <div className="text-2xl font-bold text-blue-600">{stats.totalRecords}</div>
                 <div className="text-xs text-gray-500">Enregistrements</div>
+              </div>
+              <div className="border-l border-gray-200 pl-6 flex items-center gap-3">
+                <div className="flex items-center gap-2 text-gray-600">
+                  <User className="w-4 h-4" />
+                  <span className="text-sm">{user.name}</span>
+                </div>
+                <button
+                  onClick={logout}
+                  className="flex items-center gap-1 px-2 py-1 text-sm text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                  title="Déconnexion"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
               </div>
             </div>
           </div>

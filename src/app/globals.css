@@ -346,3 +346,38 @@ input[type="time"]::-webkit-calendar-picker-indicator {
 input[type="time"]::-webkit-calendar-picker-indicator:hover {
   opacity: 1;
 }
+
+/* Custom Leaflet Tooltip styles */
+.leaflet-tooltip {
+  background-color: white !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 12px !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15) !important;
+  padding: 10px 14px !important;
+  font-family: inherit !important;
+  font-size: 12px !important;
+  color: #1e293b !important;
+  white-space: normal !important;
+  max-width: 260px !important;
+  line-height: 1.4 !important;
+}
+
+.leaflet-tooltip::before {
+  border-top-color: white !important;
+}
+
+.leaflet-tooltip-top::before {
+  border-top-color: white !important;
+}
+
+.leaflet-tooltip-bottom::before {
+  border-bottom-color: white !important;
+}
+
+.leaflet-tooltip-left::before {
+  border-left-color: white !important;
+}
+
+.leaflet-tooltip-right::before {
+  border-right-color: white !important;
+}
