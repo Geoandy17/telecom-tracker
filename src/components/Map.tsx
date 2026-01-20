@@ -352,6 +352,73 @@ export default function MapComponent({
     }
   };
 
+  const formatTime = (dateStr: string) => {
+    try {
+      return format(new Date(dateStr), "HH:mm:ss", { locale: fr });
+    } catch {
+      return dateStr;
+    }
+  };
+
+  const formatDateShort = (dateStr: string) => {
+    try {
+      return format(new Date(dateStr), "dd MMM yyyy 'à' HH:mm", { locale: fr });
+    } catch {
+      return dateStr;
+    }
+  };
+
+  // Grouper les positions par coordonnées (même lieu)
+  const groupedPositions = useMemo(() => {
+    const groups: Map<string, {
+      lat: number;
+      lng: number;
+      siteName: string;
+      timestamps: string[];
+      firstIndex: number;
+      lastIndex: number;
+    }> = new Map();
+
+    positions.forEach((pos, index) => {
+      // Clé basée sur les coordonnées (arrondi pour grouper les positions très proches)
+      const key = `${pos.lat.toFixed(5)}_${pos.lng.toFixed(5)}`;
+
+      if (groups.has(key)) {
+        const group = groups.get(key)!;
+        group.timestamps.push(pos.timestamp);
+        group.lastIndex = index; // Mettre à jour le dernier index
+      } else {
+        groups.set(key, {
+          lat: pos.lat,
+          lng: pos.lng,
+          siteName: pos.siteName,
+          timestamps: [pos.timestamp],
+          firstIndex: index,
+          lastIndex: index,
+        });
+      }
+    });
+
+    return Array.from(groups.values()).sort((a, b) => a.firstIndex - b.firstIndex);
+  }, [positions]);
+
+  // Trouver le groupe de départ (première position chronologique)
+  const startGroup = useMemo(() => {
+    if (groupedPositions.length === 0) return null;
+    return groupedPositions[0]; // Déjà trié par firstIndex
+  }, [groupedPositions]);
+
+  // Trouver le groupe d'arrivée (dernière position chronologique)
+  const endGroup = useMemo(() => {
+    if (groupedPositions.length === 0 || positions.length === 0) return null;
+    // Trouver le groupe qui contient la dernière position chronologique
+    const lastPosition = positions[positions.length - 1];
+    const key = `${lastPosition.lat.toFixed(5)}_${lastPosition.lng.toFixed(5)}`;
+    return groupedPositions.find(g =>
+      `${g.lat.toFixed(5)}_${g.lng.toFixed(5)}` === key
+    ) || groupedPositions[groupedPositions.length - 1];
+  }, [groupedPositions, positions]);
+
   // Position par défaut : Cameroun
   const defaultCenter: [number, number] = [5.9631, 10.1591];
   const defaultZoom = 6;
@@ -541,7 +608,9 @@ export default function MapComponent({
         {/* Ligne avec positions et boutons */}
         <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-200">
           <div className="text-xs text-gray-400">
-            {positions.length} position{positions.length > 1 ? 's' : ''}
+            {groupedPositions.length} lieu{groupedPositions.length > 1 ? 'x' : ''}
+            <span className="text-gray-300 mx-1">•</span>
+            {positions.length} passage{positions.length > 1 ? 's' : ''}
             {(dateRange?.start || dateRange?.end) && (
               <span className="text-blue-600 ml-1">•</span>
             )}
@@ -620,113 +689,230 @@ export default function MapComponent({
           />
         ))}
 
-        {/* Points intermédiaires numérotés (pas le premier ni le dernier) */}
-        {positions.slice(1, -1).map((pos, index) => (
-          <Marker
-            key={`intermediate-${index}`}
-            position={[pos.lat, pos.lng]}
-            icon={createNumberedIcon(index + 2, pointColors[index + 1])}
-            eventHandlers={{
-              click: (e) => {
-                const map = e.target._map;
-                map.flyTo([pos.lat, pos.lng], 17, { duration: 1 });
-              }
-            }}
-          >
-            <Tooltip direction="top" offset={[0, -10]} className="custom-tooltip">
-              <div className="text-xs">
-                <div className="font-semibold">Position {index + 2}</div>
-                <div className="text-gray-600">{formatDate(pos.timestamp)}</div>
-                <div className="text-gray-500 truncate max-w-[200px]">{pos.siteName}</div>
-              </div>
-            </Tooltip>
-            <Popup>
-              <div className="text-sm min-w-[200px]">
-                <div className="font-bold text-gray-800 text-base">Position {index + 2}</div>
-                <div className="text-gray-600 mt-2">{pos.siteName}</div>
-                <div className="text-gray-500 text-xs mt-2 bg-gray-100 p-2 rounded">
-                  <div className="font-medium">{formatDate(pos.timestamp)}</div>
+        {/* Points intermédiaires groupés par lieu (tous sauf DÉPART et ARRIVÉE) */}
+        {groupedPositions
+          .filter(group => {
+            // Exclure le groupe de départ
+            if (startGroup && group.lat === startGroup.lat && group.lng === startGroup.lng) return false;
+            // Exclure le groupe d'arrivée (sauf s'il est le même que le départ)
+            if (endGroup && startGroup !== endGroup && group.lat === endGroup.lat && group.lng === endGroup.lng) return false;
+            return true;
+          })
+          .map((group, index) => {
+          const visitCount = group.timestamps.length;
+          const color = pointColors[group.firstIndex] || '#3B82F6';
+          // Trouver le vrai index dans groupedPositions
+          const realIndex = groupedPositions.findIndex(g => g.lat === group.lat && g.lng === group.lng);
+          return (
+            <Marker
+              key={`intermediate-${index}`}
+              position={[group.lat, group.lng]}
+              icon={createNumberedIcon(realIndex + 1, color)}
+              eventHandlers={{
+                click: (e) => {
+                  const map = e.target._map;
+                  map.flyTo([group.lat, group.lng], 17, { duration: 1 });
+                }
+              }}
+            >
+              <Tooltip direction="top" offset={[0, -10]} className="custom-tooltip">
+                <div className="text-xs">
+                  <div className="font-semibold">
+                    Position {realIndex + 1}
+                    {visitCount > 1 && (
+                      <span className="ml-1 text-blue-600">({visitCount} passages)</span>
+                    )}
+                  </div>
+                  <div className="text-gray-600">{formatDateShort(group.timestamps[visitCount - 1])}</div>
+                  {visitCount > 1 && (
+                    <div className="text-gray-500 text-[10px]">
+                      → {formatDateShort(group.timestamps[0])}
+                    </div>
+                  )}
+                  {visitCount > 2 && (
+                    <div className="text-gray-400 text-[10px]">+ {visitCount - 2} autre{visitCount > 3 ? 's' : ''} passage{visitCount > 3 ? 's' : ''}</div>
+                  )}
+                  <div className="text-gray-500 truncate max-w-[200px]">{group.siteName}</div>
                 </div>
-                <div className="text-gray-400 text-xs mt-2">
-                  Coordonnées: {pos.lat.toFixed(6)}, {pos.lng.toFixed(6)}
+              </Tooltip>
+              <Popup>
+                <div className="text-sm min-w-[240px]">
+                  <div className="font-bold text-gray-800 text-base flex items-center gap-2">
+                    Position {realIndex + 1}
+                    {visitCount > 1 && (
+                      <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full">
+                        {visitCount} passages
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-gray-600 mt-2">{group.siteName}</div>
+                  <div className="mt-3">
+                    <div className="text-xs font-semibold text-gray-700 mb-1">
+                      {visitCount > 1 ? 'Heures de passage:' : 'Heure de passage:'}
+                    </div>
+                    <div className="text-xs bg-gray-50 rounded-lg p-2 max-h-[150px] overflow-y-auto space-y-1">
+                      {group.timestamps.map((ts, i) => (
+                        <div key={i} className="flex items-center gap-2 text-gray-600">
+                          <span className="w-4 h-4 flex items-center justify-center bg-gray-200 rounded text-[10px] font-medium">
+                            {i + 1}
+                          </span>
+                          {formatDate(ts)}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="text-gray-400 text-xs mt-2">
+                    Coordonnées: {group.lat.toFixed(6)}, {group.lng.toFixed(6)}
+                  </div>
                 </div>
-              </div>
-            </Popup>
-          </Marker>
-        ))}
+              </Popup>
+            </Marker>
+          );
+        })}
 
         {/* Marqueur de départ (Position 1) */}
-        {positions.length > 0 && (
-          <Marker
-            position={[positions[0].lat, positions[0].lng]}
-            icon={createIcon('#10B981', true, false)}
-            zIndexOffset={1000}
-            eventHandlers={{
-              click: (e) => {
-                const map = e.target._map;
-                map.flyTo([positions[0].lat, positions[0].lng], 17, { duration: 1 });
-              }
-            }}
-          >
-            <Tooltip direction="top" offset={[0, -15]} className="custom-tooltip">
-              <div className="text-xs">
-                <div className="font-semibold text-green-600">DÉPART</div>
-                <div className="text-gray-600">{formatDate(positions[0].timestamp)}</div>
-                <div className="text-gray-500 truncate max-w-[200px]">{positions[0].siteName}</div>
-              </div>
-            </Tooltip>
-            <Popup>
-              <div className="text-sm min-w-[200px]">
-                <div className="font-bold text-green-600 text-lg">DÉPART - Position 1</div>
-                <div className="text-gray-600 mt-2">{positions[0].siteName}</div>
-                <div className="text-gray-500 text-xs mt-2 bg-green-50 p-2 rounded">
-                  <div className="font-medium">{formatDate(positions[0].timestamp)}</div>
+        {startGroup && (() => {
+          const visitCount = startGroup.timestamps.length;
+          return (
+            <Marker
+              position={[startGroup.lat, startGroup.lng]}
+              icon={createIcon('#10B981', true, false)}
+              zIndexOffset={1000}
+              eventHandlers={{
+                click: (e) => {
+                  const map = e.target._map;
+                  map.flyTo([startGroup.lat, startGroup.lng], 17, { duration: 1 });
+                }
+              }}
+            >
+              <Tooltip direction="top" offset={[0, -15]} className="custom-tooltip">
+                <div className="text-xs">
+                  <div className="font-semibold text-green-600">
+                    DÉPART
+                    {visitCount > 1 && (
+                      <span className="ml-1 text-blue-600">({visitCount} passages)</span>
+                    )}
+                  </div>
+                  <div className="text-gray-600">{formatDateShort(startGroup.timestamps[visitCount - 1])}</div>
+                  {visitCount > 1 && (
+                    <div className="text-gray-500 text-[10px]">
+                      → {formatDateShort(startGroup.timestamps[0])}
+                    </div>
+                  )}
+                  {visitCount > 2 && (
+                    <div className="text-gray-400 text-[10px]">+ {visitCount - 2} autre{visitCount > 3 ? 's' : ''} passage{visitCount > 3 ? 's' : ''}</div>
+                  )}
+                  <div className="text-gray-500 truncate max-w-[200px]">{startGroup.siteName}</div>
                 </div>
-                <div className="text-gray-400 text-xs mt-2">
-                  Coordonnées: {positions[0].lat.toFixed(6)}, {positions[0].lng.toFixed(6)}
+              </Tooltip>
+              <Popup>
+                <div className="text-sm min-w-[240px]">
+                  <div className="font-bold text-green-600 text-lg flex items-center gap-2">
+                    DÉPART - Position 1
+                    {visitCount > 1 && (
+                      <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full">
+                        {visitCount} passages
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-gray-600 mt-2">{startGroup.siteName}</div>
+                  <div className="mt-3">
+                    <div className="text-xs font-semibold text-gray-700 mb-1">
+                      {visitCount > 1 ? 'Heures de passage:' : 'Heure de passage:'}
+                    </div>
+                    <div className="text-xs bg-green-50 rounded-lg p-2 max-h-[150px] overflow-y-auto space-y-1">
+                      {startGroup.timestamps.map((ts, i) => (
+                        <div key={i} className="flex items-center gap-2 text-gray-600">
+                          <span className="w-4 h-4 flex items-center justify-center bg-green-200 rounded text-[10px] font-medium">
+                            {i + 1}
+                          </span>
+                          {formatDate(ts)}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="text-gray-400 text-xs mt-2">
+                    Coordonnées: {startGroup.lat.toFixed(6)}, {startGroup.lng.toFixed(6)}
+                  </div>
                 </div>
-              </div>
-            </Popup>
-          </Marker>
-        )}
+              </Popup>
+            </Marker>
+          );
+        })()}
 
-        {/* Marqueur d'arrivée (Dernière position) */}
-        {positions.length > 1 && (
-          <Marker
-            position={[positions[positions.length - 1].lat, positions[positions.length - 1].lng]}
-            icon={createIcon('#EF4444', false, true)}
-            zIndexOffset={1000}
-            eventHandlers={{
-              click: (e) => {
-                const map = e.target._map;
-                const lastPos = positions[positions.length - 1];
-                map.flyTo([lastPos.lat, lastPos.lng], 17, { duration: 1 });
-              }
-            }}
-          >
-            <Tooltip direction="top" offset={[0, -15]} className="custom-tooltip">
-              <div className="text-xs">
-                <div className="font-semibold text-red-600">ARRIVÉE</div>
-                <div className="text-gray-600">{formatDate(positions[positions.length - 1].timestamp)}</div>
-                <div className="text-gray-500 truncate max-w-[200px]">{positions[positions.length - 1].siteName}</div>
-              </div>
-            </Tooltip>
-            <Popup>
-              <div className="text-sm min-w-[200px]">
-                <div className="font-bold text-red-600 text-lg">ARRIVÉE - Position {positions.length}</div>
-                <div className="text-gray-600 mt-2">
-                  {positions[positions.length - 1].siteName}
+        {/* Marqueur d'arrivée (Dernière position chronologique) */}
+        {endGroup && positions.length > 1 && (() => {
+          const visitCount = endGroup.timestamps.length;
+          // Trouver l'index de ce groupe dans groupedPositions pour le numéro de position
+          const groupIndex = groupedPositions.findIndex(g =>
+            g.lat === endGroup.lat && g.lng === endGroup.lng
+          );
+          return (
+            <Marker
+              position={[endGroup.lat, endGroup.lng]}
+              icon={createIcon('#EF4444', false, true)}
+              zIndexOffset={1000}
+              eventHandlers={{
+                click: (e) => {
+                  const map = e.target._map;
+                  map.flyTo([endGroup.lat, endGroup.lng], 17, { duration: 1 });
+                }
+              }}
+            >
+              <Tooltip direction="top" offset={[0, -15]} className="custom-tooltip">
+                <div className="text-xs">
+                  <div className="font-semibold text-red-600">
+                    ARRIVÉE
+                    {visitCount > 1 && (
+                      <span className="ml-1 text-blue-600">({visitCount} passages)</span>
+                    )}
+                  </div>
+                  <div className="text-gray-600">{formatDateShort(endGroup.timestamps[visitCount - 1])}</div>
+                  {visitCount > 1 && (
+                    <div className="text-gray-500 text-[10px]">
+                      → {formatDateShort(endGroup.timestamps[0])}
+                    </div>
+                  )}
+                  {visitCount > 2 && (
+                    <div className="text-gray-400 text-[10px]">+ {visitCount - 2} autre{visitCount > 3 ? 's' : ''} passage{visitCount > 3 ? 's' : ''}</div>
+                  )}
+                  <div className="text-gray-500 truncate max-w-[200px]">{endGroup.siteName}</div>
                 </div>
-                <div className="text-gray-500 text-xs mt-2 bg-red-50 p-2 rounded">
-                  <div className="font-medium">{formatDate(positions[positions.length - 1].timestamp)}</div>
+              </Tooltip>
+              <Popup>
+                <div className="text-sm min-w-[240px]">
+                  <div className="font-bold text-red-600 text-lg flex items-center gap-2">
+                    ARRIVÉE - Position {groupIndex + 1}
+                    {visitCount > 1 && (
+                      <span className="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full">
+                        {visitCount} passages
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-gray-600 mt-2">{endGroup.siteName}</div>
+                  <div className="mt-3">
+                    <div className="text-xs font-semibold text-gray-700 mb-1">
+                      {visitCount > 1 ? 'Heures de passage:' : 'Heure de passage:'}
+                    </div>
+                    <div className="text-xs bg-red-50 rounded-lg p-2 max-h-[150px] overflow-y-auto space-y-1">
+                      {endGroup.timestamps.map((ts, i) => (
+                        <div key={i} className="flex items-center gap-2 text-gray-600">
+                          <span className="w-4 h-4 flex items-center justify-center bg-red-200 rounded text-[10px] font-medium">
+                            {i + 1}
+                          </span>
+                          {formatDate(ts)}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="text-gray-400 text-xs mt-2">
+                    Coordonnées: {endGroup.lat.toFixed(6)}, {endGroup.lng.toFixed(6)}
+                  </div>
                 </div>
-                <div className="text-gray-400 text-xs mt-2">
-                  Coordonnées: {positions[positions.length - 1].lat.toFixed(6)}, {positions[positions.length - 1].lng.toFixed(6)}
-                </div>
-              </div>
-            </Popup>
-          </Marker>
-        )}
+              </Popup>
+            </Marker>
+          );
+        })()}
       </MapContainer>
     </div>
   );

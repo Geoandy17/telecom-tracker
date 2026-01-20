@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import Image from 'next/image';
 import { useAuth } from '@/context/AuthContext';
 import { Mail, Lock, Loader2, Eye, EyeOff } from 'lucide-react';
@@ -116,14 +115,7 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <div className="mt-6 text-center">
-            <p className="text-gray-400">
-              Pas encore de compte ?{' '}
-              <Link href="/register" className="text-blue-400 hover:text-blue-300 font-medium transition-colors">
-                Créer un compte
-              </Link>
-            </p>
-          </div>
+          {/* Inscription désactivée - gestion des comptes par l'administrateur */}
         </div>
 
         {/* Footer */}
